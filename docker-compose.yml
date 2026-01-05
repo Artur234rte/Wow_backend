@@ -32,6 +32,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://wow:wowpass@postgres:5432/wowmeta
       REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      WOWLOGS_CLIENT_ID: ${WOWLOGS_CLIENT_ID:-}
+      WOWLOGS_CLIENT_SECRET: ${WOWLOGS_CLIENT_SECRET:-}
     ports:
       - "8000:8000"
     depends_on:
@@ -50,6 +54,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://wow:wowpass@postgres:5432/wowmeta
       REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      WOWLOGS_CLIENT_ID: ${WOWLOGS_CLIENT_ID:-}
+      WOWLOGS_CLIENT_SECRET: ${WOWLOGS_CLIENT_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,6 +75,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://wow:wowpass@postgres:5432/wowmeta
       REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      WOWLOGS_CLIENT_ID: ${WOWLOGS_CLIENT_ID:-}
+      WOWLOGS_CLIENT_SECRET: ${WOWLOGS_CLIENT_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
