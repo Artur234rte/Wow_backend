@@ -1,14 +1,17 @@
 
 from sqlalchemy.exc import SQLAlchemyError
-
+import os
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     async_sessionmaker,
     AsyncSession,
 )
+from dotenv import load_dotenv
 
-DATABASE_URL = "postgresql+asyncpg://wow_user:wow_password@localhost:5432/wow_db"
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://wow_user:wow_password@localhost:5432/wow_db")
 
 
 engine = create_async_engine(
