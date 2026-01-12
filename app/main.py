@@ -1,25 +1,19 @@
-import contextlib
-from typing import AsyncIterator
+from fastapi import FastAPI, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from schemas.meta_schema import MetaBySpecResponse
+from crud.meta_crud import get_meta_by_encounter
+from view import get_db
 
-from fastapi import FastAPI
+app = FastAPI()
 
-from app.api import routes
-from app.core.config import get_settings
-from app.infrastructure.database import init_models, close_engine
+@app.get(
+    "/meta",
+    response_model=list[MetaBySpecResponse]
+)
+async def get_meta(
+    encounter: int = Query(..., description="Encounter ID"),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await get_meta_by_encounter(db, encounter)
+    return data
 
-
-@contextlib.asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    await init_models()
-    yield
-    await close_engine()
-
-
-def create_app() -> FastAPI:
-    settings = get_settings()
-    app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
-    app.include_router(routes.router)
-    return app
-
-
-app = create_app()
