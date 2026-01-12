@@ -1,6 +1,6 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from models.model import MetaBySpec
+from app.models.model import MetaBySpec
 
 async def get_meta_by_encounter(
     session: AsyncSession,

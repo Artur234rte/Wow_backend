@@ -6,7 +6,7 @@ import json
 import asyncio
 import re
 import unicodedata
-from ..models.model import MetaBySpec, Base
+from app.models.model import MetaBySpec, Base
 from sqlalchemy.exc import SQLAlchemyError
 
 from typing import Optional, List, Dict, Any
