@@ -1,8 +1,8 @@
 from fastapi import FastAPI, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from schemas.meta_schema import MetaBySpecResponse
-from crud.meta_crud import get_meta_by_encounter
-from view import get_db
+from front.crud.meta_crud import get_meta_by_encounter
+from db.db import get_db
 
 app = FastAPI()
 
