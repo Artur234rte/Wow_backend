@@ -7,14 +7,17 @@ from app.front.crud.meta_crud import get_meta_by_encounter, get_meta_aggregated
 from app.db.db import get_db
 from typing import Optional
 
-app = FastAPI()
+app = FastAPI(
+    redirect_slashes=False  # Отключаем автоматический редирект для trailing slash
+)
 
-# Настройка CORS
+# Настройка CORS - должна быть ПЕРЕД всеми роутами
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://wowggdev.netlify.app"
+        "https://wowggdev.netlify.app",
+        "https://wowbackend-production.up.railway.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -52,7 +55,7 @@ async def get_meta(
 
 
 @app.get(
-    "/meta/encounters_id",
+    "/meta/encounters_id/",
     response_model=EncountersListResponse,
     summary="Получить список всех доступных энкаунтеров",
     description="Возвращает список энкаунтеров текущего сезона Mythic+ с их ID и названиями"
