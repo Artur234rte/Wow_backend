@@ -36,6 +36,10 @@ _rio_semaphore = asyncio.Semaphore(3)  # Макс 3 одновременных �
 _rio_last_request_time = 0.0
 _rio_min_interval = 0.5  # Минимум 500мс между запросами
 
+# Кеш для RIO scores игроков (region-realm-name -> score)
+_rio_cache: Dict[str, Optional[float]] = {}
+_rio_cache_lock = asyncio.Lock()
+
 
 async def init_models():
     """Инициализация таблиц в БД"""
@@ -210,11 +214,20 @@ async def fetch_rio_with_retry(
     client: httpx.AsyncClient,
     region: str,
     realm: str,
-    name: str,
-    max_retries: int = 3
+    name: str
 ) -> Optional[float]:
-    """Получение RIO score с retry механизмом и строгим rate limiting"""
-    global _rio_last_request_time
+    """Получение RIO score с кешированием и строгим rate limiting (без retry)"""
+    global _rio_last_request_time, _rio_cache
+
+    # Создаем ключ для кеша (нормализованный)
+    cache_key = f"{region.lower()}-{realm.lower()}-{name.lower()}"
+
+    # Проверяем кеш
+    async with _rio_cache_lock:
+        if cache_key in _rio_cache:
+            cached_score = _rio_cache[cache_key]
+            logger.debug(f"💾 Cache hit для {name}: {cached_score}")
+            return cached_score
 
     params = {
         "region": region,
@@ -223,76 +236,70 @@ async def fetch_rio_with_retry(
         "fields": "mythic_plus_scores_by_season:current"
     }
 
-    for attempt in range(max_retries):
-        try:
-            async with _rio_semaphore:
-                # Глобальный rate limiting - минимум 500мс между запросами
-                current_time = asyncio.get_event_loop().time()
-                time_since_last = current_time - _rio_last_request_time
-                if time_since_last < _rio_min_interval:
-                    sleep_time = _rio_min_interval - time_since_last
-                    await asyncio.sleep(sleep_time)
+    try:
+        async with _rio_semaphore:
+            # Глобальный rate limiting - минимум 500мс между запросами
+            current_time = asyncio.get_event_loop().time()
+            time_since_last = current_time - _rio_last_request_time
+            if time_since_last < _rio_min_interval:
+                sleep_time = _rio_min_interval - time_since_last
+                await asyncio.sleep(sleep_time)
 
-                _rio_last_request_time = asyncio.get_event_loop().time()
+            _rio_last_request_time = asyncio.get_event_loop().time()
 
-                r = await client.get(RIO_URL, params=params, timeout=10)
-                r.raise_for_status()
-                data = r.json()
+            r = await client.get(RIO_URL, params=params, timeout=10)
+            r.raise_for_status()
+            data = r.json()
 
-                seasons = data.get("mythic_plus_scores_by_season", [])
-                if not seasons:
-                    logger.debug(f"Нет RIO данных для {name}-{realm}-{region}")
-                    return None
-
-                scores = seasons[0].get("scores")
-                if not scores:
-                    logger.debug(f"Нет scores для {name}-{realm}-{region}")
-                    return None
-
-                rio_score = scores.get("all")
-                if rio_score:
-                    logger.debug(f"RIO score для {name}: {rio_score}")
-                return rio_score
-
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                logger.debug(f"Игрок не найден в RIO: {name}-{realm}-{region}")
-                return None
-            elif e.response.status_code == 429:
-                # Rate limit - значительно увеличиваем задержку
-                backoff_time = 2.0 * (2 ** attempt)  # Экспоненциальный backoff: 2s, 4s, 8s
-                logger.warning(f"⚠️  Rate limit RIO API для {name} (попытка {attempt + 1}/{max_retries}), ожидание {backoff_time:.1f}s")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(backoff_time)
-                else:
-                    logger.error(f"❌ Превышен rate limit RIO для {name} после {max_retries} попыток")
-                    return None
-            else:
-                logger.warning(f"HTTP {e.response.status_code} для {name} (попытка {attempt + 1}/{max_retries})")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(0.3 * (attempt + 1))
-                else:
-                    return None
-
-        except httpx.TimeoutException:
-            logger.warning(f"Timeout при запросе RIO для {name} (попытка {attempt + 1}/{max_retries})")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(0.3 * (attempt + 1))
-            else:
+            seasons = data.get("mythic_plus_scores_by_season", [])
+            if not seasons:
+                logger.debug(f"Нет RIO данных для {name}-{realm}-{region}")
+                # Кешируем отсутствие данных
+                async with _rio_cache_lock:
+                    _rio_cache[cache_key] = None
                 return None
 
-        except httpx.RequestError as e:
-            logger.warning(f"Ошибка сети RIO для {name}: {e} (попытка {attempt + 1}/{max_retries})")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(0.3 * (attempt + 1))
-            else:
+            scores = seasons[0].get("scores")
+            if not scores:
+                logger.debug(f"Нет scores для {name}-{realm}-{region}")
+                async with _rio_cache_lock:
+                    _rio_cache[cache_key] = None
                 return None
 
-        except Exception as e:
-            logger.error(f"❌ Неожиданная ошибка RIO для {name}: {e}", exc_info=True)
+            rio_score = scores.get("all")
+            logger.debug(f"RIO score для {name}: {rio_score}")
+
+            # Сохраняем в кеш
+            async with _rio_cache_lock:
+                _rio_cache[cache_key] = rio_score
+
+            return rio_score
+
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            logger.debug(f"Игрок не найден в RIO: {name}-{realm}-{region}")
+            # Кешируем 404 как None
+            async with _rio_cache_lock:
+                _rio_cache[cache_key] = None
+            return None
+        elif e.response.status_code == 429:
+            logger.warning(f"⚠️ Rate limit RIO API для {name}")
+            return None
+        else:
+            logger.warning(f"HTTP {e.response.status_code} для {name}")
             return None
 
-    return None
+    except httpx.TimeoutException:
+        logger.warning(f"Timeout при запросе RIO для {name}")
+        return None
+
+    except httpx.RequestError as e:
+        logger.warning(f"Ошибка сети RIO для {name}: {e}")
+        return None
+
+    except Exception as e:
+        logger.error(f"❌ Неожиданная ошибка RIO для {name}: {e}", exc_info=True)
+        return None
 
 
 async def fetch_leaderboard_optimized(
@@ -506,6 +513,12 @@ async def test_leaderboard():
                 logger.error(f"Задача завершилась с исключением: {result}")
 
         logger.info(f"Результаты: {len(valid_objects)} успешных, {failed_count} без данных, {exception_count} ошибок")
+
+        # Статистика кеша RIO
+        cache_size = len(_rio_cache)
+        cache_with_scores = sum(1 for v in _rio_cache.values() if v is not None and v > 0)
+        cache_nulls = sum(1 for v in _rio_cache.values() if v is None)
+        logger.info(f"💾 Cache статистика: {cache_size} записей ({cache_with_scores} с RIO, {cache_nulls} без данных)")
 
         # Батчинг для записи в БД
         if valid_objects:
