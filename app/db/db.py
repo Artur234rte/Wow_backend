@@ -18,7 +18,6 @@ DATABASE_URL = raw_url.replace(
 )
 
 
-
 engine = create_async_engine(
     DATABASE_URL,
     echo=True,
