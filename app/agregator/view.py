@@ -1,4 +1,4 @@
-from app.agregator.constant import TOKEN_URL, CLIENT_ID, CLIENT_SECRET, WOW_CLASS_SPECS, SPEC_ROLE_METRIC, API_URL, RIO_URL
+from app.agregator.constant import TOKEN_URL, CLIENT_ID, CLIENT_SECRET, WOW_CLASS_SPECS, SPEC_ROLE_METRIC, API_URL, RIO_URL, ENCOUNTERS
 from app.agregator.quieres import q_with_gear_and_talent, q_balance, q_simple
 import base64
 import httpx
@@ -9,14 +9,14 @@ import unicodedata
 import logging
 from app.models.model import MetaBySpec, Base
 from sqlalchemy.exc import SQLAlchemyError
-
+from sqlalchemy import select
 from typing import Optional, List, Dict, Any
 from app.db.db import engine, AsyncSessionLocal
 
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
         logging.FileHandler('wow_aggregator.log')
@@ -54,23 +54,48 @@ async def init_models():
 
 
 async def batch_add_meta_by_spec(objects: List[MetaBySpec]) -> List[MetaBySpec]:
-    """Батчинг для вставки записей в БД - намного быстрее чем по одной"""
+    """Батчинг для вставки/обновления записей в БД (upsert) - намного быстрее чем по одной"""
     if not objects:
         logger.warning("Попытка сохранить пустой список объектов")
         return []
 
-    logger.info(f"Сохранение {len(objects)} записей в БД...")
+    logger.info(f"Сохранение/обновление {len(objects)} записей в БД...")
 
     async with AsyncSessionLocal() as session:
         try:
-            session.add_all(objects)
-            await session.commit()
-            logger.debug(f"Коммит выполнен, обновляем {len(objects)} объектов...")
+            updated_count = 0
+            inserted_count = 0
 
+            for obj in objects:
+                # Проверяем, существует ли запись с такими же параметрами
+
+                stmt = select(MetaBySpec).where(
+                    MetaBySpec.class_name == obj.class_name,
+                    MetaBySpec.spec == obj.spec,
+                    MetaBySpec.encounter_id == obj.encounter_id
+                )
+                result = await session.execute(stmt)
+                existing = result.scalar_one_or_none()
+
+                if existing:
+                    # Обновляем существующую запись
+                    existing.meta = obj.meta
+                    existing.spec_type = obj.spec_type
+                    updated_count += 1
+                    logger.debug(f"Обновление: {obj.class_name} {obj.spec} encounter {obj.encounter_id}")
+                else:
+                    # Добавляем новую запись
+                    session.add(obj)
+                    inserted_count += 1
+                    logger.debug(f"Вставка: {obj.class_name} {obj.spec} encounter {obj.encounter_id}")
+
+            await session.commit()
+            logger.info(f"✅ Успешно обработано {len(objects)} записей: {inserted_count} новых, {updated_count} обновлено")
+
+            # Refresh всех объектов для получения их ID
             for obj in objects:
                 await session.refresh(obj)
 
-            logger.info(f"✅ Успешно сохранено {len(objects)} записей")
             return objects
 
         except SQLAlchemyError as e:
@@ -247,7 +272,7 @@ async def fetch_rio_with_retry(
 
             _rio_last_request_time = asyncio.get_event_loop().time()
 
-            r = await client.get(RIO_URL, params=params, timeout=10)
+            r = await client.get(RIO_URL, params=params, timeout=5)
             r.raise_for_status()
             data = r.json()
 
@@ -421,7 +446,7 @@ async def fetch_single_spec_meta(
     spec_name: str
 ) -> Optional[MetaBySpec]:
     """Получение меты для одной спеки одного босса"""
-    logger.debug(f"Обработка {class_name} {spec_name} для encounter {encounter_id}")
+    logger.info(f"Обработка {class_name} {spec_name} для encounter {encounter_id}")
 
     try:
         meta_average_value = await fetch_leaderboard_optimized(
@@ -430,11 +455,6 @@ async def fetch_single_spec_meta(
 
         if meta_average_value is None:
             logger.debug(f"Нет данных для {class_name} {spec_name} на encounter {encounter_id}")
-            return None
-
-        # Проверка на существование spec в SPEC_ROLE_METRIC
-        if spec_name not in SPEC_ROLE_METRIC:
-            logger.error(f"❌ Spec {spec_name} не найден в SPEC_ROLE_METRIC!")
             return None
 
         meta_obj = MetaBySpec(
@@ -468,24 +488,13 @@ async def test_leaderboard():
         logger.error(f"❌ Не удалось получить access token: {e}")
         return []
 
-    # ID боссов
-    encounters = [
-        62660,   # Ulgrax the Devourer
-        12830,   # The Bloodbound Horror
-        62287,   # Sikran
-        62773,   # Rasha'nan
-        62649,   # Broodtwister Ovi'nax
-        112442,  # Nexus-Princess Ky'veza
-        112441,  # The Silken Court
-        62662    # Queen Ansurek
-    ]
 
-    logger.info(f"Обработка {len(encounters)} боссов...")
+    logger.info(f"Обработка {len(ENCOUNTERS)} боссов...")
 
     async with httpx.AsyncClient(timeout=60) as client:
         # Создаем все задачи для параллельного выполнения
         tasks = []
-        for encounter_id in encounters:
+        for encounter_id in ENCOUNTERS:
             for class_name, specs in WOW_CLASS_SPECS.items():
                 for spec_name in specs:
                     task = fetch_single_spec_meta(

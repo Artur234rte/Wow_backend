@@ -65,3 +65,14 @@ SPEC_ROLE_METRIC = {
     "Arms":         ("dps",  "playerscore"),
     "Fury":         ("dps",  "playerscore"),
 }
+
+ENCOUNTERS = [
+    62660,   # Ulgrax the Devourer
+    12830,   # The Bloodbound Horror
+    # 62287,   # Sikran
+    # 62773,   # Rasha'nan
+    # 62649,   # Broodtwister Ovi'nax
+    # 112442,  # Nexus-Princess Ky'veza
+    # 112441,  # The Silken Court
+    # 62662    # Queen Ansurek
+]
