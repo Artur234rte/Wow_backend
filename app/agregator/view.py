@@ -543,7 +543,7 @@ async def main():
 import time
 if __name__ == "__main__":
     start = time.perf_counter()
-    asyncio.run(main())
-    # asyncio.run(balance())
+    # asyncio.run(main())
+    asyncio.run(balance())
     end = time.perf_counter()
     logger.info(f"⏱️  Общее время выполнения: {end - start:.2f} сек")
