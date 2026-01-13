@@ -10,8 +10,13 @@ from sqlalchemy.ext.asyncio import (
 from dotenv import load_dotenv
 
 load_dotenv()
+raw_url = os.getenv("DATABASE_URL",  "postgresql+asyncpg://wow_user:wow_password@localhost:5432/wow_db")
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://wow_user:wow_password@localhost:5432/wow_db")
+DATABASE_URL = raw_url.replace(
+    "postgresql://",
+    "postgresql+asyncpg://",
+)
+
 
 
 engine = create_async_engine(
