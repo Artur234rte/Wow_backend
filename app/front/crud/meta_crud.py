@@ -4,11 +4,15 @@ from app.models.model import MetaBySpec
 
 async def get_meta_by_encounter(
     session: AsyncSession,
-    encounter_id: int
+    encounter_id: int,
+    spec_type: str
 ):
     stmt = (
         select(MetaBySpec)
-        .where(MetaBySpec.encounter_id == encounter_id)
+        .where(
+            MetaBySpec.encounter_id == encounter_id,
+            MetaBySpec.spec_type == spec_type
+        )
         .order_by(MetaBySpec.meta.desc())
     )
     result = await session.execute(stmt)
@@ -16,12 +20,13 @@ async def get_meta_by_encounter(
 
 
 async def get_meta_aggregated(
-    session: AsyncSession
+    session: AsyncSession,
+    spec_type: str
 ):
     """
     Получить агрегированные данные по всем энкаунтерам.
     Возвращает среднее значение meta для каждого спека по всем подземельям.
-    Результаты отсортированы по убыванию среднего значения meta.
+    Результаты отфильтрованы по spec_type и отсортированы по убыванию среднего значения meta.
     """
     stmt = (
         select(
@@ -30,6 +35,7 @@ async def get_meta_aggregated(
             MetaBySpec.spec_type,
             func.avg(MetaBySpec.meta).label('meta')
         )
+        .where(MetaBySpec.spec_type == spec_type)
         .group_by(MetaBySpec.class_name, MetaBySpec.spec, MetaBySpec.spec_type)
         .order_by(func.avg(MetaBySpec.meta).desc())
     )

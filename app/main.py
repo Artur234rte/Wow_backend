@@ -12,19 +12,20 @@ app = FastAPI()
     "/meta/encounters/",
     response_model=list[MetaBySpecResponse],
     summary="Получить мету по энкаунтеру или агрегированную мету",
-    description="Если указан encounter_id - возвращает мету для конкретного подземелья. Если не указан - возвращает среднюю мету по всем подземельям для каждого спека."
+    description="Если указан encounter_id - возвращает мету для конкретного подземелья. Если не указан - возвращает среднюю мету по всем подземельям для каждого спека. Обязательно указать spec_type (dps/tank/healer)."
 )
 async def get_meta(
+    spec_type: str = Query(..., description="Тип спека: dps, tank или healer"),
     encounter: Optional[int] = Query(None, description="Encounter ID (необязательный)"),
     db: AsyncSession = Depends(get_db),
 ):
     if encounter is not None:
         # Возвращаем данные по конкретному энкаунтеру
-        data = await get_meta_by_encounter(db, encounter)
+        data = await get_meta_by_encounter(db, encounter, spec_type)
         return data
     else:
         # Возвращаем агрегированные данные (среднее по всем энкаунтерам)
-        rows = await get_meta_aggregated(db)
+        rows = await get_meta_aggregated(db, spec_type)
         # Преобразуем результат в формат MetaBySpecResponse
         return [
             MetaBySpecResponse(
