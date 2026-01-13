@@ -7,7 +7,7 @@ from app.db.db import get_db
 app = FastAPI()
 
 @app.get(
-    "/meta",
+    "/meta/encounters/",
     response_model=list[MetaBySpecResponse]
 )
 async def get_meta(
