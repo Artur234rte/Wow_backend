@@ -18,12 +18,12 @@ WOW_CLASS_SPECS = {
     "Hunter": ["BeastMastery", "Marksmanship", "Survival"],
     "Mage": ["Arcane", "Fire", "Frost"],
     "Monk": ["Brewmaster", "Mistweaver", "Windwalker"],
-    # "Paladin": ["Holy", "Protection", "Retribution"],
-    # "Priest": ["Discipline", "Holy", "Shadow"],
-    # "Rogue": ["Assassination", "Outlaw", "Subtlety"],
-    # "Shaman": ["Elemental", "Enhancement", "Restoration"],
-    # "Warlock": ["Affliction", "Demonology", "Destruction"],
-    # "Warrior": ["Arms", "Fury", "Protection"],
+    "Paladin": ["Holy", "Protection", "Retribution"],
+    "Priest": ["Discipline", "Holy", "Shadow"],
+    "Rogue": ["Assassination", "Outlaw", "Subtlety"],
+    "Shaman": ["Elemental", "Enhancement", "Restoration"],
+    "Warlock": ["Affliction", "Demonology", "Destruction"],
+    "Warrior": ["Arms", "Fury", "Protection"],
 }
 SPEC_ROLE_METRIC = {
     "Blood":        ("tank", "playerscore"),
@@ -69,13 +69,13 @@ SPEC_ROLE_METRIC = {
 
 ENCOUNTERS = {
     62660: "Ara-Kara, City of Echoes",
-    # 12830: "Eco-Dome Al'dani",
-    # 62287: "Halls of Atonement",
-    # 62773: "Operation: Floodgate",
-    # 62649: "Priory of the Sacred Flame",
-    # 112442: "Tazavesh: So'leah's Gambit",
-    # 112441: "Tazavesh: Streets of Wonder",
-    # 62662: "The Dawnbreaker"
+    12830: "Eco-Dome Al'dani",
+    62287: "Halls of Atonement",
+    62773: "Operation: Floodgate",
+    62649: "Priory of the Sacred Flame",
+    112442: "Tazavesh: So'leah's Gambit",
+    112441: "Tazavesh: Streets of Wonder",
+    62662: "The Dawnbreaker"
 }
 
 RAID = {
