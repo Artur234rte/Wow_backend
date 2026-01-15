@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import (
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Для Railway используется переменная DATABASE_URL из окружения
+# Локально по умолчанию - localhost, в Docker/Railway - из переменной окружения
 raw_url = os.getenv("DATABASE_URL",  "postgresql+asyncpg://wow_user:wow_password@localhost:5432/wow_db")
 
 DATABASE_URL = raw_url.replace(
@@ -20,7 +23,7 @@ DATABASE_URL = raw_url.replace(
 
 engine = create_async_engine(
     DATABASE_URL,
-    echo=True,
+    echo=os.getenv("SQL_DEBUG", "false").lower() == "true",  # Отключено в продакшене
     pool_pre_ping=True,
 )
 

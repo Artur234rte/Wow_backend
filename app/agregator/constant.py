@@ -8,7 +8,8 @@ CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
 TOKEN_URL = "https://www.warcraftlogs.com/oauth/token"
 API_URL = "https://www.warcraftlogs.com/api/v2/client"
-RIO_URL = url = "https://raider.io/api/v1/characters/profile"
+RIO_URL = "https://raider.io/api/v1/characters/profile"
+
 WOW_CLASS_SPECS = {
     "DeathKnight": ["Blood", "Frost", "Unholy"],
     "DemonHunter": ["Havoc", "Vengeance"],
@@ -17,12 +18,12 @@ WOW_CLASS_SPECS = {
     "Hunter": ["BeastMastery", "Marksmanship", "Survival"],
     "Mage": ["Arcane", "Fire", "Frost"],
     "Monk": ["Brewmaster", "Mistweaver", "Windwalker"],
-    "Paladin": ["Holy", "Protection", "Retribution"],
-    "Priest": ["Discipline", "Holy", "Shadow"],
-    "Rogue": ["Assassination", "Outlaw", "Subtlety"],
-    "Shaman": ["Elemental", "Enhancement", "Restoration"],
-    "Warlock": ["Affliction", "Demonology", "Destruction"],
-    "Warrior": ["Arms", "Fury", "Protection"],
+    # "Paladin": ["Holy", "Protection", "Retribution"],
+    # "Priest": ["Discipline", "Holy", "Shadow"],
+    # "Rogue": ["Assassination", "Outlaw", "Subtlety"],
+    # "Shaman": ["Elemental", "Enhancement", "Restoration"],
+    # "Warlock": ["Affliction", "Demonology", "Destruction"],
+    # "Warrior": ["Arms", "Fury", "Protection"],
 }
 SPEC_ROLE_METRIC = {
     "Blood":        ("tank", "playerscore"),
@@ -66,13 +67,25 @@ SPEC_ROLE_METRIC = {
     "Fury":         ("dps",  "playerscore"),
 }
 
-ENCOUNTERS = [
-    62660,   # Ulgrax the Devourer
-    12830,   # The Bloodbound Horror
-    # 62287,   # Sikran
-    # 62773,   # Rasha'nan
-    # 62649,   # Broodtwister Ovi'nax
-    # 112442,  # Nexus-Princess Ky'veza
-    # 112441,  # The Silken Court
-    # 62662    # Queen Ansurek
-]
+ENCOUNTERS = {
+    62660: "Ara-Kara, City of Echoes",
+    # 12830: "Eco-Dome Al'dani",
+    # 62287: "Halls of Atonement",
+    # 62773: "Operation: Floodgate",
+    # 62649: "Priory of the Sacred Flame",
+    # 112442: "Tazavesh: So'leah's Gambit",
+    # 112441: "Tazavesh: Streets of Wonder",
+    # 62662: "The Dawnbreaker"
+}
+
+RAID = {
+    2902: "Ulgrax the Devourer",
+    2917: "The Bloodbound Horror",
+    2898: "Sikran, Captain of the Sureki",
+    2918: "Rasha'nan",
+    2919: "Broodtwister Ovi'nax",
+    2920: "Nexus-Princess Ky'veza",
+    2921: "The Silken Court",
+    2922: "Queen Ansurek"
+}
+## Убрать популярность и item levelv

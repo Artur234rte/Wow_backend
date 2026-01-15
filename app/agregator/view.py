@@ -1,5 +1,7 @@
-from app.agregator.constant import TOKEN_URL, CLIENT_ID, CLIENT_SECRET, WOW_CLASS_SPECS, SPEC_ROLE_METRIC, API_URL, RIO_URL, ENCOUNTERS
-from app.agregator.quieres import q_with_gear_and_talent, q_balance, q_simple
+from app.agregator.constant import TOKEN_URL, CLIENT_ID, CLIENT_SECRET, WOW_CLASS_SPECS, SPEC_ROLE_METRIC, API_URL, RIO_URL, ENCOUNTERS, RAID
+from app.agregator.quieres import q_with_gear_and_talent, q_balance, \
+    QUERY_FOR_MYTHIC_PLUS_LOW_KEYS, QUERY_FOR_MYTHIC_PLUS_HIGH_KEYS, \
+    QUERY_FOR_RAID_DPS, QUERY_FOR_RAID_HPS
 import base64
 import httpx
 import json
@@ -10,8 +12,22 @@ import logging
 from app.models.model import MetaBySpec, Base
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from typing import Optional, List, Dict, Any
 from app.db.db import engine, AsyncSessionLocal
+
+# Настройка логирования с ротацией файлов
+from logging.handlers import RotatingFileHandler
+
+# Создаем handler с ротацией (10 MB на файл, максимум 5 файлов)
+file_handler = RotatingFileHandler(
+    'wow_aggregator.log',
+    maxBytes=10*1024*1024,  # 10 MB
+    backupCount=5,
+    encoding='utf-8'
+)
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 
 # Настройка логирования
 logging.basicConfig(
@@ -19,10 +35,15 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('wow_aggregator.log')
+        file_handler
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Отключаем HTTP Request логи от httpx (они логируются на INFO уровне)
+# Устанавливаем WARNING чтобы скрыть INFO и DEBUG сообщения от httpx
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # Глобальный кеш для access token
 _token_cache: Optional[Dict[str, Any]] = None
@@ -54,48 +75,52 @@ async def init_models():
 
 
 async def batch_add_meta_by_spec(objects: List[MetaBySpec]) -> List[MetaBySpec]:
-    """Батчинг для вставки/обновления записей в БД (upsert) - намного быстрее чем по одной"""
+    """
+    Батчинг для вставки/обновления записей в БД (upsert) с использованием PostgreSQL ON CONFLICT.
+    Это намного быстрее чем проверка каждой записи отдельным SELECT.
+    Вместо N SELECT + N INSERT/UPDATE выполняется всего 1 запрос.
+    """
     if not objects:
         logger.warning("Попытка сохранить пустой список объектов")
         return []
 
-    logger.info(f"Сохранение/обновление {len(objects)} записей в БД...")
+    logger.info(f"Сохранение/обновление {len(objects)} записей в БД через ON CONFLICT...")
 
     async with AsyncSessionLocal() as session:
         try:
-            updated_count = 0
-            inserted_count = 0
+            values = [
+                {
+                    "class_name": obj.class_name,
+                    "spec": obj.spec,
+                    "meta": obj.meta,
+                    "spec_type": obj.spec_type,
+                    "encounter_id": obj.encounter_id,
+                    "key": obj.key,
+                    "average_dps": obj.average_dps,
+                    "max_key_level": obj.max_key_level,
+                }
+                for obj in objects
+            ]
 
-            for obj in objects:
-                # Проверяем, существует ли запись с такими же параметрами
+            # PostgreSQL INSERT ... ON CONFLICT DO UPDATE
+            stmt = insert(MetaBySpec).values(values)
 
-                stmt = select(MetaBySpec).where(
-                    MetaBySpec.class_name == obj.class_name,
-                    MetaBySpec.spec == obj.spec,
-                    MetaBySpec.encounter_id == obj.encounter_id
-                )
-                result = await session.execute(stmt)
-                existing = result.scalar_one_or_none()
+            # При конфликте по уникальному индексу (class_name, spec, encounter_id, key)
+            # обновляем все поля кроме id
+            stmt = stmt.on_conflict_do_update(
+                index_elements=['class_name', 'spec', 'encounter_id', 'key'],
+                set_={
+                    'meta': stmt.excluded.meta,
+                    'spec_type': stmt.excluded.spec_type,
+                    'average_dps': stmt.excluded.average_dps,
+                    'max_key_level': stmt.excluded.max_key_level,
+                }
+            )
 
-                if existing:
-                    # Обновляем существующую запись
-                    existing.meta = obj.meta
-                    existing.spec_type = obj.spec_type
-                    updated_count += 1
-                    logger.debug(f"Обновление: {obj.class_name} {obj.spec} encounter {obj.encounter_id}")
-                else:
-                    # Добавляем новую запись
-                    session.add(obj)
-                    inserted_count += 1
-                    logger.debug(f"Вставка: {obj.class_name} {obj.spec} encounter {obj.encounter_id}")
-
+            await session.execute(stmt)
             await session.commit()
-            logger.info(f"✅ Успешно обработано {len(objects)} записей: {inserted_count} новых, {updated_count} обновлено")
 
-            # Refresh всех объектов для получения их ID
-            for obj in objects:
-                await session.refresh(obj)
-
+            logger.info(f"✅ Успешно обработано {len(objects)} записей в одном запросе (INSERT ON CONFLICT)")
             return objects
 
         except SQLAlchemyError as e:
@@ -332,9 +357,15 @@ async def fetch_leaderboard_optimized(
     token: str,
     encounter_id: int,
     class_name: str,
-    spec_name: str
-) -> Optional[float]:
-    """Оптимизированная версия fetch_leaderboard - возвращает только среднее RIO"""
+    spec_name: str,
+    query: str = None,
+    key_type: str = "high",
+    is_raid: bool = False
+) -> Optional[Dict[str, Any]]:
+    """Оптимизированная версия fetch_leaderboard - возвращает среднее RIO, DPS и max_key"""
+    if query is None:
+        query = QUERY_FOR_MYTHIC_PLUS_HIGH_KEYS
+
     variables = {
         "encounterID": encounter_id,
         "className": class_name,
@@ -349,7 +380,7 @@ async def fetch_leaderboard_optimized(
                 API_URL,
                 headers={"Authorization": f"Bearer {token}"},
                 json={
-                    "query": q_simple,
+                    "query": query,
                     "variables": variables,
                 },
                 timeout=30
@@ -373,59 +404,102 @@ async def fetch_leaderboard_optimized(
             return None
 
         rankings = rankings_block["rankings"]
-        logger.info(f"Получено {len(rankings)} игроков для {class_name} {spec_name} на encounter {encounter_id}")
+        logger.info(f"📥 Получено {len(rankings)} игроков для класса={class_name}, спека={spec_name}, encounter={encounter_id}")
 
-        # Собираем задачи для параллельного получения RIO
-        rio_tasks = []
-        valid_players = 0
+        # Подсчет DPS и max_key
+        total_dps = 0.0
+        valid_dps_entries = 0
+        max_key = 0
+
+        # Собираем уникальных игроков для RIO (только для M+, не для рейдов)
+        unique_players = set()  # set для хранения уникальных (region, realm, name)
 
         for item in rankings:
-            hidden = item.get("hidden", False)
-            server_obj = item.get("server") or {}
-            server_name = server_obj.get("name", "")
-            server_region = server_obj.get("region", "")
-            player_name = item.get("name")
+            # Извлекаем DPS
+            dps = item.get("amount")
+            if dps and dps > 0:
+                total_dps += dps
+                valid_dps_entries += 1
 
-            if not hidden and server_name and server_region and player_name and player_name != "Anonymous":
-                try:
-                    server = normalize_realm(server_name)
-                    region = normalize_region(server_region) if server_region else None
+            # Извлекаем bracket (key level) - только для M+
+            if not is_raid:
+                bracket_data = item.get("bracketData", 0)
+                if bracket_data > max_key:
+                    max_key = bracket_data
 
-                    if region:
-                        rio_tasks.append(fetch_rio_with_retry(client, region, server, player_name))
-                        valid_players += 1
-                except Exception as e:
-                    logger.debug(f"Ошибка нормализации для {player_name}/{server_name}/{server_region}: {e}")
-                    continue
+            # Собираем уникальных игроков для RIO (только для M+, не для рейдов)
+            if not is_raid:
+                hidden = item.get("hidden", False)
+                server_obj = item.get("server") or {}
+                server_name = server_obj.get("name", "")
+                server_region = server_obj.get("region", "")
+                player_name = item.get("name")
 
-        if not rio_tasks:
-            logger.warning(f"Нет валидных игроков для запроса RIO ({class_name} {spec_name})")
-            return None
+                if not hidden and server_name and server_region and player_name and player_name != "Anonymous":
+                    try:
+                        server = normalize_realm(server_name)
+                        region = normalize_region(server_region) if server_region else None
 
-        logger.info(f"Запрос RIO для {valid_players} игроков ({class_name} {spec_name})...")
+                        if region:
+                            # Добавляем уникальную комбинацию (region, realm, name)
+                            unique_players.add((region, server, player_name))
+                    except Exception as e:
+                        logger.debug(f"Ошибка нормализации для {player_name}/{server_name}/{server_region}: {e}")
+                        continue
 
-        # Параллельное выполнение всех RIO запросов
-        rio_results = await asyncio.gather(*rio_tasks, return_exceptions=True)
+        # Создаем задачи только для уникальных игроков
+        rio_tasks = [fetch_rio_with_retry(client, region, server, name) for region, server, name in unique_players]
+        valid_players = len(unique_players)
 
-        # Подсчет среднего
-        total_score = 0.0
-        counter_players_with_score = 0
+        # Формируем результат
+        result = {}
 
-        for rio_result in rio_results:
-            if isinstance(rio_result, (int, float)) and rio_result is not None and rio_result > 0:
-                total_score += float(rio_result)
-                counter_players_with_score += 1
-            elif isinstance(rio_result, Exception):
-                logger.debug(f"RIO задача вернула исключение: {rio_result}")
+        # Средний DPS
+        if valid_dps_entries > 0:
+            result["average_dps"] = int(total_dps / valid_dps_entries)
+        else:
+            result["average_dps"] = None
 
-        if counter_players_with_score == 0:
-            logger.warning(f"Нет RIO scores для {class_name} {spec_name} на encounter {encounter_id}")
-            return None
+        # Максимальный ключ только для high keys M+
+        if not is_raid and key_type == "high":
+            result["max_key_level"] = max_key if max_key > 0 else None
+        else:
+            result["max_key_level"] = None
 
-        average_score = total_score / counter_players_with_score
-        logger.info(f"✅ Средний RIO для {class_name} {spec_name}: {average_score:.2f} ({counter_players_with_score}/{valid_players} игроков)")
+        # Вычисляем RIO только для M+, не для рейдов
+        if not is_raid:
+            if not rio_tasks:
+                logger.warning(f"Нет валидных игроков для запроса RIO (класс={class_name}, спек={spec_name}, encounter={encounter_id})")
+                result["average_rio"] = None
+            else:
+                logger.info(f"🔍 Запрос RIO для {valid_players} игроков (класс={class_name}, спек={spec_name}, encounter={encounter_id})")
 
-        return average_score
+                # Параллельное выполнение всех RIO запросов
+                rio_results = await asyncio.gather(*rio_tasks, return_exceptions=True)
+
+                # Подсчет среднего
+                total_score = 0.0
+                counter_players_with_score = 0
+
+                for rio_result in rio_results:
+                    if isinstance(rio_result, (int, float)) and rio_result is not None and rio_result > 0:
+                        total_score += float(rio_result)
+                        counter_players_with_score += 1
+                    elif isinstance(rio_result, Exception):
+                        logger.debug(f"RIO задача вернула исключение: {rio_result}")
+
+                if counter_players_with_score == 0:
+                    logger.warning(f"Нет RIO scores (класс={class_name}, спек={spec_name}, encounter={encounter_id})")
+                    result["average_rio"] = None
+                else:
+                    average_score = total_score / counter_players_with_score
+                    logger.info(f"✅ Средний RIO={average_score:.2f} для класса={class_name}, спека={spec_name}, encounter={encounter_id} ({counter_players_with_score}/{valid_players} игроков)")
+                    result["average_rio"] = average_score
+        else:
+            # Для рейдов RIO не вычисляется
+            result["average_rio"] = None
+
+        return result
 
     except httpx.HTTPStatusError as e:
         logger.error(f"❌ HTTP ошибка для {class_name} {spec_name}: {e.response.status_code}")
@@ -443,29 +517,69 @@ async def fetch_single_spec_meta(
     token: str,
     encounter_id: int,
     class_name: str,
-    spec_name: str
+    spec_name: str,
+    key_type: str = "high",
+    query: str = None,
+    is_raid: bool = False
 ) -> Optional[MetaBySpec]:
-    """Получение меты для одной спеки одного босса"""
-    logger.info(f"Обработка {class_name} {spec_name} для encounter {encounter_id}")
+    """Получение меты для одной спеки одного босса (M+ или Raid)"""
+    if is_raid:
+        logger.info(f"📊 Обработка рейда: класс={class_name}, спек={spec_name}, encounter={encounter_id}")
+    else:
+        logger.info(f"📊 Обработка: класс={class_name}, спек={spec_name}, encounter={encounter_id}, ключ={key_type}")
+
+    # Автоматический выбор запроса на основе key_type и is_raid
+    if query is None:
+        if is_raid:
+            # Для рейдов определяем роль спека
+            spec_role = SPEC_ROLE_METRIC.get(spec_name, ("dps", "playerscore"))[0]
+            if spec_role == "healer":
+                query = QUERY_FOR_RAID_HPS
+            else:
+                query = QUERY_FOR_RAID_DPS
+        elif key_type == "low":
+            query = QUERY_FOR_MYTHIC_PLUS_LOW_KEYS
+        else:
+            query = QUERY_FOR_MYTHIC_PLUS_HIGH_KEYS
 
     try:
-        meta_average_value = await fetch_leaderboard_optimized(
-            client, token, encounter_id, class_name, spec_name
+        result_data = await fetch_leaderboard_optimized(
+            client, token, encounter_id, class_name, spec_name,
+            query=query,
+            key_type=key_type,
+            is_raid=is_raid
         )
 
-        if meta_average_value is None:
+        if result_data is None:
             logger.debug(f"Нет данных для {class_name} {spec_name} на encounter {encounter_id}")
+            return None
+
+        # Извлекаем данные из результата
+        average_rio = result_data.get("average_rio")
+        average_dps = result_data.get("average_dps")
+        max_key_level = result_data.get("max_key_level")
+
+        # Для M+ приоритет: RIO, затем DPS. Для рейдов используется DPS или HPS
+        if average_rio:
+            meta_value = int(average_rio)
+        elif average_dps:
+            meta_value = int(average_dps)
+        else:
+            logger.debug(f"Нет meta данных (ни RIO, ни DPS/HPS) для {class_name} {spec_name} на encounter {encounter_id}")
             return None
 
         meta_obj = MetaBySpec(
             class_name=class_name,
             spec=spec_name,
-            meta=int(meta_average_value),
+            meta=meta_value,
             spec_type=SPEC_ROLE_METRIC[spec_name][0],
-            encounter_id=encounter_id
+            encounter_id=encounter_id,
+            key=key_type if not is_raid else None,
+            average_dps=average_dps,
+            max_key_level=max_key_level
         )
 
-        logger.debug(f"✅ Создан объект меты для {class_name} {spec_name}: {meta_average_value:.2f}")
+        logger.debug(f"✅ Создан объект меты для {class_name} {spec_name}: meta={meta_value}, dps={average_dps}, max_key={max_key_level}")
         return meta_obj
 
     except KeyError as e:
@@ -477,7 +591,7 @@ async def fetch_single_spec_meta(
 
 
 async def test_leaderboard():
-    """Основная функция сбора данных - ОПТИМИЗИРОВАННАЯ"""
+    """Основная функция сбора данных - ОПТИМИЗИРОВАННАЯ с поддержкой LOW/HIGH keys и RAID"""
     logger.info("=" * 80)
     logger.info("НАЧАЛО СБОРА ДАННЫХ WOW META")
     logger.info("=" * 80)
@@ -488,19 +602,43 @@ async def test_leaderboard():
         logger.error(f"❌ Не удалось получить access token: {e}")
         return []
 
-
-    logger.info(f"Обработка {len(ENCOUNTERS)} боссов...")
+    logger.info(f"Обработка {len(ENCOUNTERS)} подземелий и {len(RAID)} рейд боссов...")
 
     async with httpx.AsyncClient(timeout=60) as client:
         # Создаем все задачи для параллельного выполнения
         tasks = []
-        for encounter_id in ENCOUNTERS:
+
+        # M+ задачи
+        for encounter_id in ENCOUNTERS.keys():
             for class_name, specs in WOW_CLASS_SPECS.items():
                 for spec_name in specs:
-                    task = fetch_single_spec_meta(
-                        client, token, encounter_id, class_name, spec_name
+                    # LOW KEYS задача
+                    task_low = fetch_single_spec_meta(
+                        client, token, encounter_id, class_name, spec_name,
+                        key_type="low",
+                        query=QUERY_FOR_MYTHIC_PLUS_LOW_KEYS,
+                        is_raid=False
                     )
-                    tasks.append(task)
+                    tasks.append(task_low)
+
+                    # HIGH KEYS задача
+                    task_high = fetch_single_spec_meta(
+                        client, token, encounter_id, class_name, spec_name,
+                        key_type="high",
+                        query=QUERY_FOR_MYTHIC_PLUS_HIGH_KEYS,
+                        is_raid=False
+                    )
+                    tasks.append(task_high)
+
+        # RAID задачи
+        for raid_id in RAID.keys():
+            for class_name, specs in WOW_CLASS_SPECS.items():
+                for spec_name in specs:
+                    task_raid = fetch_single_spec_meta(
+                        client, token, raid_id, class_name, spec_name,
+                        is_raid=True
+                    )
+                    tasks.append(task_raid)
 
         logger.info(f"Запускаем {len(tasks)} задач параллельно (с rate limiting)...")
 
@@ -565,7 +703,7 @@ async def main():
 import time
 if __name__ == "__main__":
     start = time.perf_counter()
-    # asyncio.run(main())
+    asyncio.run(main())
     asyncio.run(balance())
     end = time.perf_counter()
     logger.info(f"⏱️  Общее время выполнения: {end - start:.2f} сек")
