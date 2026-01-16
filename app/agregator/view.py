@@ -50,7 +50,7 @@ _token_cache: Optional[Dict[str, Any]] = None
 _token_lock = asyncio.Lock()
 
 # Семафоры для rate limiting
-_api_semaphore = asyncio.Semaphore(5)  # Макс 5 одновременных запросов к WarcraftLogs
+_api_semaphore = asyncio.Semaphore(3)  # Макс 5 одновременных запросов к WarcraftLogs
 _rio_semaphore = asyncio.Semaphore(3)  # Макс 3 одновременных запроса к RaiderIO (строгий лимит)
 
 # Глобальный rate limit для RaiderIO
