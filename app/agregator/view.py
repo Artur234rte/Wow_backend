@@ -51,11 +51,11 @@ _token_lock = asyncio.Lock()
 
 # Семафоры для rate limiting
 _api_semaphore = asyncio.Semaphore(5)  # Макс 5 одновременных запросов к WarcraftLogs
-_rio_semaphore = asyncio.Semaphore(2)  # Макс 3 одновременных запроса к RaiderIO (строгий лимит)
+_rio_semaphore = asyncio.Semaphore(3)  # Макс 3 одновременных запроса к RaiderIO (строгий лимит)
 
 # Глобальный rate limit для RaiderIO
 _rio_last_request_time = 0.0
-_rio_min_interval = 0.5  # Минимум 500мс между запросами
+_rio_min_interval = 0.8 # Минимум 500мс между запросами
 
 # Кеш для RIO scores игроков (region-realm-name -> score)
 _rio_cache: Dict[str, Optional[float]] = {}

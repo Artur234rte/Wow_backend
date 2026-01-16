@@ -68,14 +68,14 @@ SPEC_ROLE_METRIC = {
 }
 
 ENCOUNTERS = {
-    62660: "Ara-Kara, City of Echoes",
-    12830: "Eco-Dome Al'dani",
-    62287: "Halls of Atonement",
-    62773: "Operation: Floodgate",
-    62649: "Priory of the Sacred Flame",
-    112442: "Tazavesh: So'leah's Gambit",
-    112441: "Tazavesh: Streets of Wonder",
-    62662: "The Dawnbreaker"
+    # 62660: "Ara-Kara, City of Echoes",
+    # 12830: "Eco-Dome Al'dani",
+    # 62287: "Halls of Atonement",
+    # 62773: "Operation: Floodgate",
+    # 62649: "Priory of the Sacred Flame",
+    # 112442: "Tazavesh: So'leah's Gambit",
+    # 112441: "Tazavesh: Streets of Wonder",
+    # 62662: "The Dawnbreaker"
 }
 
 RAID = {

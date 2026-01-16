@@ -8,7 +8,7 @@ async def get_meta_by_encounter(
     session: AsyncSession,
     encounter_id: int,
     spec_type: str,
-    key_type: str = "high",
+    key_type: str = "all",
     is_raid: bool = False
 ) -> Union[list[MetaBySpecMythicPlusResponse], list[MetaBySpecRaidResponse]]:
     """
@@ -18,7 +18,7 @@ async def get_meta_by_encounter(
         session: AsyncSession
         encounter_id: ID encounter
         spec_type: Тип спека (dps/tank/healer)
-        key_type: Тип ключа ("low" или "high", по умолчанию "high", игнорируется для рейдов)
+        key_type: Тип ключа ("all", "low" или "high", по умолчанию "all", игнорируется для рейдов)
         is_raid: Является ли encounter рейдом
     """
     if is_raid:
@@ -48,36 +48,72 @@ async def get_meta_by_encounter(
         ]
     else:
         # Для M+ используем key_type
-        stmt = (
-            select(MetaBySpec)
-            .where(
-                MetaBySpec.encounter_id == encounter_id,
-                MetaBySpec.spec_type == spec_type,
-                MetaBySpec.key == key_type
+        if key_type == "all":
+            # Агрегируем данные между low и high ключами
+            stmt = (
+                select(
+                    MetaBySpec.class_name,
+                    MetaBySpec.spec,
+                    MetaBySpec.spec_type,
+                    func.avg(MetaBySpec.meta).label('meta'),
+                    func.avg(MetaBySpec.average_dps).label('average_dps'),
+                    func.max(MetaBySpec.max_key_level).label('max_key')
+                )
+                .where(
+                    MetaBySpec.encounter_id == encounter_id,
+                    MetaBySpec.spec_type == spec_type,
+                    MetaBySpec.key.in_(["low", "high"])
+                )
+                .group_by(MetaBySpec.class_name, MetaBySpec.spec, MetaBySpec.spec_type)
+                .order_by(func.avg(MetaBySpec.meta).desc())
             )
-            .order_by(MetaBySpec.meta.desc())
-        )
-        result = await session.execute(stmt)
-        rows = result.scalars().all()
+            result = await session.execute(stmt)
+            rows = result.all()
 
-        return [
-            MetaBySpecMythicPlusResponse(
-                class_name=row.class_name,
-                spec=row.spec,
-                meta=int(row.meta) if row.meta else None,
-                spec_type=row.spec_type,
-                encounter_id=row.encounter_id,
-                average_dps=row.average_dps,
-                max_key=row.max_key_level
+            return [
+                MetaBySpecMythicPlusResponse(
+                    class_name=row.class_name,
+                    spec=row.spec,
+                    meta=int(row.meta) if row.meta else None,
+                    spec_type=row.spec_type,
+                    encounter_id=encounter_id,
+                    average_dps=row.average_dps,
+                    max_key=row.max_key
+                )
+                for row in rows
+            ]
+        else:
+            # Для конкретного low или high
+            stmt = (
+                select(MetaBySpec)
+                .where(
+                    MetaBySpec.encounter_id == encounter_id,
+                    MetaBySpec.spec_type == spec_type,
+                    MetaBySpec.key == key_type
+                )
+                .order_by(MetaBySpec.meta.desc())
             )
-            for row in rows
-        ]
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+
+            return [
+                MetaBySpecMythicPlusResponse(
+                    class_name=row.class_name,
+                    spec=row.spec,
+                    meta=int(row.meta) if row.meta else None,
+                    spec_type=row.spec_type,
+                    encounter_id=row.encounter_id,
+                    average_dps=row.average_dps,
+                    max_key=row.max_key_level
+                )
+                for row in rows
+            ]
 
 
 async def get_meta_aggregated(
     session: AsyncSession,
     spec_type: str,
-    key_type: str = "high"
+    key_type: str = "all"
 ):
     """
     Получить агрегированные данные по всем энкаунтерам.
@@ -87,23 +123,43 @@ async def get_meta_aggregated(
     Args:
         session: AsyncSession
         spec_type: Тип спека (dps/tank/healer)
-        key_type: Тип ключа ("low" или "high", по умолчанию "high")
+        key_type: Тип ключа ("all", "low" или "high", по умолчанию "all")
     """
-    stmt = (
-        select(
-            MetaBySpec.class_name,
-            MetaBySpec.spec,
-            MetaBySpec.spec_type,
-            func.avg(MetaBySpec.meta).label('meta'),
-            func.avg(MetaBySpec.average_dps).label('average_dps'),
-            func.max(MetaBySpec.max_key_level).label('max_key')
+    if key_type == "all":
+        # Агрегируем данные между low и high ключами по всем подземельям
+        stmt = (
+            select(
+                MetaBySpec.class_name,
+                MetaBySpec.spec,
+                MetaBySpec.spec_type,
+                func.avg(MetaBySpec.meta).label('meta'),
+                func.avg(MetaBySpec.average_dps).label('average_dps'),
+                func.max(MetaBySpec.max_key_level).label('max_key')
+            )
+            .where(
+                MetaBySpec.spec_type == spec_type,
+                MetaBySpec.key.in_(["low", "high"])
+            )
+            .group_by(MetaBySpec.class_name, MetaBySpec.spec, MetaBySpec.spec_type)
+            .order_by(func.avg(MetaBySpec.meta).desc())
         )
-        .where(
-            MetaBySpec.spec_type == spec_type,
-            MetaBySpec.key == key_type
+    else:
+        # Для конкретного low или high
+        stmt = (
+            select(
+                MetaBySpec.class_name,
+                MetaBySpec.spec,
+                MetaBySpec.spec_type,
+                func.avg(MetaBySpec.meta).label('meta'),
+                func.avg(MetaBySpec.average_dps).label('average_dps'),
+                func.max(MetaBySpec.max_key_level).label('max_key')
+            )
+            .where(
+                MetaBySpec.spec_type == spec_type,
+                MetaBySpec.key == key_type
+            )
+            .group_by(MetaBySpec.class_name, MetaBySpec.spec, MetaBySpec.spec_type)
+            .order_by(func.avg(MetaBySpec.meta).desc())
         )
-        .group_by(MetaBySpec.class_name, MetaBySpec.spec, MetaBySpec.spec_type)
-        .order_by(func.avg(MetaBySpec.meta).desc())
-    )
     result = await session.execute(stmt)
     return result.all()

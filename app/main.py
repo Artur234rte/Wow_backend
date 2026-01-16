@@ -50,12 +50,12 @@ def is_mythic_plus_encounter(encounter_id: int) -> bool:
     "/meta/encounters/",
     response_model=Union[list[MetaBySpecMythicPlusResponse], list[MetaBySpecRaidResponse]],
     summary="Получить мету по энкаунтеру или агрегированную мету",
-    description="Если указан encounter - возвращает мету для конкретного подземелья/рейда. Если не указан - возвращает среднюю мету по всем подземельям для каждого спека. Обязательно указать spec_type (dps/tank/healer). Для M+ параметр key_type позволяет выбрать low или high keys (по умолчанию high). Для рейдов key_type игнорируется."
+    description="Если указан encounter - возвращает мету для конкретного подземелья/рейда. Если не указан - возвращает среднюю мету по всем подземельям для каждого спека. Обязательно указать spec_type (dps/tank/healer). Для M+ параметр key_type позволяет выбрать: 'all' (среднее между low и high, по умолчанию), 'low' или 'high'. Для рейдов key_type игнорируется."
 )
 async def get_meta(
     spec_type: str = Query(..., description="Тип спека: dps, tank или healer"),
     encounter: Optional[int] = Query(None, description="Encounter ID (необязательный)"),
-    key_type: str = Query("high", description="Тип ключа: low или high (по умолчанию high, только для M+)"),
+    key_type: str = Query("all", description="Тип ключа: all (среднее между low и high), low или high (по умолчанию all, только для M+)"),
     db: AsyncSession = Depends(get_db),
 ):
     if encounter is not None:
