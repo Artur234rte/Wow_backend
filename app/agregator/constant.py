@@ -13,17 +13,17 @@ RIO_URL = "https://raider.io/api/v1/characters/profile"
 WOW_CLASS_SPECS = {
     "DeathKnight": ["Blood", "Frost", "Unholy"],
     "DemonHunter": ["Havoc", "Vengeance"],
-    "Druid": ["Balance", "Feral", "Guardian", "Restoration"],
-    "Evoker": ["Devastation", "Preservation", "Augmentation"],
-    "Hunter": ["BeastMastery", "Marksmanship", "Survival"],
-    "Mage": ["Arcane", "Fire", "Frost"],
-    "Monk": ["Brewmaster", "Mistweaver", "Windwalker"],
-    "Paladin": ["Holy", "Protection", "Retribution"],
-    "Priest": ["Discipline", "Holy", "Shadow"],
-    "Rogue": ["Assassination", "Outlaw", "Subtlety"],
-    "Shaman": ["Elemental", "Enhancement", "Restoration"],
-    "Warlock": ["Affliction", "Demonology", "Destruction"],
-    "Warrior": ["Arms", "Fury", "Protection"],
+    # "Druid": ["Balance", "Feral", "Guardian", "Restoration"],
+    # "Evoker": ["Devastation", "Preservation", "Augmentation"],
+    # "Hunter": ["BeastMastery", "Marksmanship", "Survival"],
+    # "Mage": ["Arcane", "Fire", "Frost"],
+    # "Monk": ["Brewmaster", "Mistweaver", "Windwalker"],
+    # "Paladin": ["Holy", "Protection", "Retribution"],
+    # "Priest": ["Discipline", "Holy", "Shadow"],
+    # "Rogue": ["Assassination", "Outlaw", "Subtlety"],
+    # "Shaman": ["Elemental", "Enhancement", "Restoration"],
+    # "Warlock": ["Affliction", "Demonology", "Destruction"],
+    # "Warrior": ["Arms", "Fury", "Protection"],
 }
 SPEC_ROLE_METRIC = {
     "Blood":        ("tank", "playerscore"),
@@ -68,7 +68,7 @@ SPEC_ROLE_METRIC = {
 }
 
 ENCOUNTERS = {
-    # 62660: "Ara-Kara, City of Echoes",
+    62660: "Ara-Kara, City of Echoes",
     # 12830: "Eco-Dome Al'dani",
     # 62287: "Halls of Atonement",
     # 62773: "Operation: Floodgate",
@@ -79,13 +79,13 @@ ENCOUNTERS = {
 }
 
 RAID = {
-    2902: "Ulgrax the Devourer",
-    2917: "The Bloodbound Horror",
-    2898: "Sikran, Captain of the Sureki",
-    2918: "Rasha'nan",
-    2919: "Broodtwister Ovi'nax",
-    2920: "Nexus-Princess Ky'veza",
-    2921: "The Silken Court",
-    2922: "Queen Ansurek"
+    # 2902: "Ulgrax the Devourer",
+    # 2917: "The Bloodbound Horror",
+    # 2898: "Sikran, Captain of the Sureki",
+    # 2918: "Rasha'nan",
+    # 2919: "Broodtwister Ovi'nax",
+    # 2920: "Nexus-Princess Ky'veza",
+    # 2921: "The Silken Court",
+    # 2922: "Queen Ansurek"
 }
 ## Убрать популярность и item levelv

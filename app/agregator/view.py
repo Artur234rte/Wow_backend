@@ -55,7 +55,7 @@ _rio_semaphore = asyncio.Semaphore(3)  # Макс 3 одновременных �
 
 # Глобальный rate limit для RaiderIO
 _rio_last_request_time = 0.0
-_rio_min_interval = 0.8 # Минимум 500мс между запросами
+_rio_min_interval = 0.6 # Минимум 500мс между запросами
 
 # Кеш для RIO scores игроков (region-realm-name -> score)
 _rio_cache: Dict[str, Optional[float]] = {}
@@ -247,16 +247,27 @@ def normalize_realm(realm: str) -> str:
     'Tarren Mill' -> 'tarren-mill'
     'Twisting Nether' -> 'twisting-nether'
     'Quel'Thalas' -> 'quel-thalas'
+    "Pozzo dell'Eternità" -> 'pozzo-delleternita'
     """
     if not realm:
-        logger.warning("Пустое значение реалма")
+        logger.debug("Пустое значение реалма")
         return ""
 
     realm = realm.strip().lower()
+
+    # Удаляем акценты и диакритические знаки
     realm = unicodedata.normalize("NFKD", realm)
     realm = realm.encode("ascii", "ignore").decode("ascii")
+
+    # Удаляем все символы кроме букв, цифр, пробелов и дефисов
     realm = re.sub(r"[^a-z0-9\s-]", "", realm)
+
+    # Заменяем множественные пробелы/дефисы на один дефис
     realm = re.sub(r"[\s-]+", "-", realm)
+
+    # Убираем дефисы в начале и конце
+    realm = realm.strip("-")
+
     return realm
 
 
@@ -268,6 +279,21 @@ async def fetch_rio_with_retry(
 ) -> Optional[float]:
     """Получение RIO score с кешированием и строгим rate limiting (без retry)"""
     global _rio_last_request_time, _rio_cache
+
+    # Валидация входных данных перед запросом
+    if not region or not realm or not name:
+        logger.debug(f"Пропуск {name}: пустой region/realm/name (region={region}, realm={realm})")
+        return None
+
+    # Проверка на пустой или невалидный realm после нормализации
+    if realm in ("", "-", "--"):
+        logger.debug(f"Пропуск {name}: невалидный realm '{realm}' (region={region})")
+        return None
+
+    # Проверка длины realm (слишком короткие обычно ошибочные)
+    if len(realm) < 2:
+        logger.debug(f"Пропуск {name}: слишком короткий realm '{realm}' (region={region})")
+        return None
 
     # Создаем ключ для кеша (нормализованный)
     cache_key = f"{region.lower()}-{realm.lower()}-{name.lower()}"
@@ -334,6 +360,22 @@ async def fetch_rio_with_retry(
             return None
         elif e.response.status_code == 429:
             logger.warning(f"⚠️ Rate limit RIO API для {name}")
+            return None
+        elif e.response.status_code == 400:
+            # Анализируем детали 400 ошибки
+            try:
+                error_body = e.response.text
+                # "Could not find requested character" - это по сути 404
+                if "Could not find requested character" in error_body:
+                    logger.info(f"Персонаж не найден (400): {name}-{realm}-{region}")
+                else:
+                    # Только логируем другие типы 400 ошибок для отладки
+                    logger.info(f"HTTP 400 для {name} (region={region}, realm={realm}): {error_body[:150]}")
+            except:
+                logger.info(f"HTTP 400 для {name} (region={region}, realm={realm})")
+            # Кешируем 400 как None, чтобы не повторять запрос
+            async with _rio_cache_lock:
+                _rio_cache[cache_key] = None
             return None
         else:
             logger.warning(f"HTTP {e.response.status_code} для {name}")
