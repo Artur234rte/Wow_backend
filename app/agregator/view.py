@@ -61,6 +61,23 @@ _rio_min_interval = 0.6 # Минимум 500мс между запросами
 _rio_cache: Dict[str, Optional[float]] = {}
 _rio_cache_lock = asyncio.Lock()
 
+# Глобальная статистика сбора данных
+_stats = {
+    "total_players_from_wcl": 0,        # Всего игроков получено из WarcraftLogs
+    "hidden_players": 0,                 # Скрытые игроки (hidden=True)
+    "anonymous_players": 0,              # Анонимные игроки (name="Anonymous")
+    "no_server_info": 0,                 # Игроки без server/region
+    "invalid_region": 0,                 # Неподдерживаемый регион (CN и т.д.)
+    "invalid_realm": 0,                  # Невалидный realm (пустой, слишком короткий)
+    "unique_players_for_rio": 0,        # Уникальных игроков для запроса RIO
+    "rio_requests_sent": 0,              # RIO запросов отправлено
+    "rio_cache_hits": 0,                 # Попадания в кеш RIO
+    "rio_success": 0,                    # Успешно получено RIO score
+    "rio_not_found": 0,                  # Игроки не найдены в RIO (404/400)
+    "rio_errors": 0,                     # Ошибки при запросе RIO (timeout, network)
+}
+_stats_lock = asyncio.Lock()
+
 
 async def init_models():
     """Инициализация таблиц в БД"""
@@ -278,20 +295,26 @@ async def fetch_rio_with_retry(
     name: str
 ) -> Optional[float]:
     """Получение RIO score с кешированием и строгим rate limiting (без retry)"""
-    global _rio_last_request_time, _rio_cache
+    global _rio_last_request_time, _rio_cache, _stats
 
     # Валидация входных данных перед запросом
     if not region or not realm or not name:
+        async with _stats_lock:
+            _stats["invalid_realm"] += 1
         logger.debug(f"Пропуск {name}: пустой region/realm/name (region={region}, realm={realm})")
         return None
 
     # Проверка на пустой или невалидный realm после нормализации
     if realm in ("", "-", "--"):
+        async with _stats_lock:
+            _stats["invalid_realm"] += 1
         logger.debug(f"Пропуск {name}: невалидный realm '{realm}' (region={region})")
         return None
 
     # Проверка длины realm (слишком короткие обычно ошибочные)
     if len(realm) < 2:
+        async with _stats_lock:
+            _stats["invalid_realm"] += 1
         logger.debug(f"Пропуск {name}: слишком короткий realm '{realm}' (region={region})")
         return None
 
@@ -302,6 +325,8 @@ async def fetch_rio_with_retry(
     async with _rio_cache_lock:
         if cache_key in _rio_cache:
             cached_score = _rio_cache[cache_key]
+            async with _stats_lock:
+                _stats["rio_cache_hits"] += 1
             logger.debug(f"💾 Cache hit для {name}: {cached_score}")
             return cached_score
 
@@ -616,7 +641,7 @@ async def fetch_single_spec_meta(
             meta=meta_value,
             spec_type=SPEC_ROLE_METRIC[spec_name][0],
             encounter_id=encounter_id,
-            key=key_type if not is_raid else None,
+            key=key_type if not is_raid else "raid",
             average_dps=average_dps,
             max_key_level=max_key_level
         )

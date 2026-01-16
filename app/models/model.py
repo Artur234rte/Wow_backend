@@ -21,6 +21,6 @@ class MetaBySpec(Base):
     encounter_id: Mapped[int] = mapped_column(Integer)
 
     # Новые поля для разделения low/high keys
-    key: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)  # "low" или "high" или None для рейдов
+    key: Mapped[str] = mapped_column(String(10), nullable=False)  # "low" или "high" или "raid" для рейдов
     average_dps: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)  # Средний DPS
     max_key_level: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)  # Максимальный уровень ключа (только для high keys)
