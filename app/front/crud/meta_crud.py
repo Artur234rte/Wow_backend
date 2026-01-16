@@ -28,7 +28,7 @@ async def get_meta_by_encounter(
             .where(
                 MetaBySpec.encounter_id == encounter_id,
                 MetaBySpec.spec_type == spec_type,
-                MetaBySpec.key.is_(None)
+                MetaBySpec.key == "raid"
             )
             .order_by(MetaBySpec.meta.desc())
         )
