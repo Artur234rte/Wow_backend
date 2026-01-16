@@ -141,3 +141,17 @@ query {
   }
 }
 '''
+
+# Запрос для получения journalID encounter (для получения иконок из Blizzard API)
+QUERY_GET_JOURNAL_ID = """
+query(
+  $encounterID: Int!,
+) {
+  worldData {
+    encounter(id: $encounterID) {
+      name
+      journalID
+    }
+  }
+}
+"""

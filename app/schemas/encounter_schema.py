@@ -6,6 +6,7 @@ class EncounterResponse(BaseModel):
     """Схема для одного энкаунтера"""
     id: int
     name: str
+    icon: str  # URL иконки из Blizzard API
 
 
 class EncountersListResponse(BaseModel):

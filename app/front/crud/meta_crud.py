@@ -22,7 +22,7 @@ async def get_meta_by_encounter(
         is_raid: Является ли encounter рейдом
     """
     if is_raid:
-        # Для рейдов key=None
+        # Для рейдов key='raid'
         stmt = (
             select(MetaBySpec)
             .where(
