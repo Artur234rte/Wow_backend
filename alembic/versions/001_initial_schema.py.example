@@ -1,0 +1,52 @@
+"""initial schema with fixed key field
+
+Revision ID: 001
+Revises:
+Create Date: 2026-01-16
+
+Это пример начальной миграции. После пересоздания базы данных:
+1. Удалите суффикс .example из имени файла
+2. Запустите: alembic upgrade head
+
+Если вы хотите автогенерировать миграцию:
+1. Удалите этот файл
+2. Запустите: alembic revision --autogenerate -m "initial schema"
+"""
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+
+
+# revision identifiers, used by Alembic.
+revision: str = '001'
+down_revision: Union[str, None] = None
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    """Создание таблицы meta_by_spec с исправленным полем key"""
+
+    op.create_table(
+        'meta_by_spec',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('class_name', sa.String(length=30), nullable=False),
+        sa.Column('spec', sa.String(length=30), nullable=False),
+        sa.Column('meta', sa.Float(), nullable=False),
+        sa.Column('spec_type', sa.String(length=30), nullable=False),
+        sa.Column('encounter_id', sa.Integer(), nullable=False),
+        # ВАЖНО: key теперь NOT NULL, для рейдов используется значение 'raid'
+        sa.Column('key', sa.String(length=10), nullable=False),
+        sa.Column('average_dps', sa.Float(), nullable=True),
+        sa.Column('max_key_level', sa.Integer(), nullable=True),
+        sa.PrimaryKeyConstraint('id'),
+        # Уникальный индекс на комбинацию полей
+        sa.UniqueConstraint('class_name', 'spec', 'encounter_id', 'key',
+                          name='uix_class_spec_encounter_key')
+    )
+
+
+def downgrade() -> None:
+    """Удаление таблицы meta_by_spec"""
+    op.drop_table('meta_by_spec')
