@@ -6,7 +6,6 @@ from app.schemas.encounter_schema import EncountersListResponse
 from app.front.crud.meta_crud import get_meta_by_encounter, get_meta_aggregated
 from app.db.db import get_db
 from app.agregator.constant import ENCOUNTERS, RAID
-from app.agregator.encounter_utils import get_encounter_data
 from typing import Optional, Union
 
 app = FastAPI(
@@ -88,21 +87,20 @@ async def get_meta(
     "/meta/encounters_id/",
     response_model=EncountersListResponse,
     summary="Получить список всех доступных M+ подземелий",
-    description="Возвращает список подземелий текущего сезона Mythic+ с их ID, названиями и иконками"
+    description="Возвращает список подземелий текущего сезона Mythic+ с их ID и названиями"
 )
 async def get_encounters_list():
     """
     Возвращает список подземелий Mythic+ Season 3
 
     Этот эндпоинт не требует параметров и возвращает список
-    подземелий из константы ENCOUNTERS с их идентификаторами, названиями и иконками.
+    подземелий из константы ENCOUNTERS с их идентификаторами и названиями.
     """
-    encounters_data = [get_encounter_data(encounter_id) for encounter_id in ENCOUNTERS.keys()]
     return {
         "name": "Mythic+ Season 3",
         "encounters": [
-            {"id": data["id"], "name": data["name"], "icon": data["icon"]}
-            for data in encounters_data
+            {"id": encounter_id, "name": encounter_name}
+            for encounter_id, encounter_name in ENCOUNTERS.items()
         ]
     }
 
@@ -111,21 +109,20 @@ async def get_encounters_list():
     "/meta/raids_id/",
     response_model=EncountersListResponse,
     summary="Получить список всех рейд боссов",
-    description="Возвращает список боссов текущего рейда с их ID, названиями и иконками"
+    description="Возвращает список боссов текущего рейда с их ID и названиями"
 )
 async def get_raids_list():
     """
     Возвращает список рейд боссов
 
     Этот эндпоинт не требует параметров и возвращает список
-    боссов из константы RAID с их идентификаторами, названиями и иконками.
+    боссов из константы RAID с их идентификаторами и названиями.
     """
-    raids_data = [get_encounter_data(raid_id) for raid_id in RAID.keys()]
     return {
         "name": "Nerub-ar Palace",
         "encounters": [
-            {"id": data["id"], "name": data["name"], "icon": data["icon"]}
-            for data in raids_data
+            {"id": raid_id, "name": raid_name}
+            for raid_id, raid_name in RAID.items()
         ]
     }
 
